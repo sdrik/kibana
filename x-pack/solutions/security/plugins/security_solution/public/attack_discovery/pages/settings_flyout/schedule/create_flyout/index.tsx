@@ -23,19 +23,15 @@ import React, { useCallback, useState } from 'react';
 import { PageScope } from '../../../../../data_view_manager/constants';
 import { useDataView } from '../../../../../data_view_manager/hooks/use_data_view';
 import { useKibana } from '../../../../../common/lib/kibana';
-import { AttackDiscoveryEventTypes } from '../../../../../common/lib/telemetry';
 import { ConfirmationModal } from '../confirmation_modal';
 import { useSourcererDataView } from '../../../../../sourcerer/containers';
 import { Footer } from '../../footer';
 import { MIN_FLYOUT_WIDTH } from '../../constants';
 import { useEditForm } from '../edit_form';
 import type { AttackDiscoveryScheduleSchema } from '../edit_form/types';
-import { useScheduleApi } from '../logic/use_schedule_api';
+import { useCreateAttackDiscoverySchedule } from '../logic/use_create_schedule';
 import * as i18n from './translations';
-import {
-  convertFormDataInBaseSchedule,
-  convertFormDataToWorkflowSchedule,
-} from '../utils/convert_form_data';
+import { convertFormDataInBaseSchedule } from '../utils/convert_form_data';
 
 interface Props {
   onClose: () => void;
@@ -60,7 +56,7 @@ export const CreateFlyout: React.FC<Props> = React.memo(({ onClose }) => {
   });
 
   const {
-    services: { telemetry, uiSettings },
+    services: { uiSettings },
   } = useKibana();
 
   const { alertsIndexPattern, http, settings } = useAssistantContext();
@@ -73,8 +69,8 @@ export const CreateFlyout: React.FC<Props> = React.memo(({ onClose }) => {
   const { sourcererDataView } = useSourcererDataView();
   const { dataView: experimentalDataView } = useDataView(PageScope.alerts);
 
-  const { isWorkflowsEnabled, useCreateSchedule } = useScheduleApi();
-  const { mutateAsync: createScheduleMutation, isLoading: isLoadingQuery } = useCreateSchedule();
+  const { mutateAsync: createAttackDiscoverySchedule, isLoading: isLoadingQuery } =
+    useCreateAttackDiscoverySchedule();
 
   const onCreateSchedule = useCallback(
     async (scheduleData: AttackDiscoveryScheduleSchema) => {
@@ -84,11 +80,7 @@ export const CreateFlyout: React.FC<Props> = React.memo(({ onClose }) => {
       }
 
       try {
-        const convertFn = isWorkflowsEnabled
-          ? convertFormDataToWorkflowSchedule
-          : convertFormDataInBaseSchedule;
-
-        const scheduleToCreate = convertFn(
+        const scheduleToCreate = convertFormDataInBaseSchedule(
           scheduleData,
           alertsIndexPattern ?? '',
           connector,
@@ -96,21 +88,7 @@ export const CreateFlyout: React.FC<Props> = React.memo(({ onClose }) => {
           uiSettings,
           experimentalDataView
         );
-
-        // `createScheduleMutation` is a union of public/workflow mutation
-        // functions with incompatible parameter types. `isWorkflowsEnabled`
-        // guarantees the correct converter was used above, making this safe.
-        await (
-          createScheduleMutation as (params: {
-            scheduleToCreate: typeof scheduleToCreate;
-          }) => Promise<unknown>
-        )({ scheduleToCreate });
-
-        telemetry.reportEvent(AttackDiscoveryEventTypes.ScheduleCreated, {
-          has_actions: (scheduleData.actions ?? []).length > 0,
-          interval: scheduleData.interval,
-        });
-
+        await createAttackDiscoverySchedule({ scheduleToCreate });
         onClose();
       } catch (err) {
         // Error is handled by the mutation's onError callback, so no need to do anything here
@@ -119,12 +97,10 @@ export const CreateFlyout: React.FC<Props> = React.memo(({ onClose }) => {
     [
       aiConnectors,
       alertsIndexPattern,
-      createScheduleMutation,
+      createAttackDiscoverySchedule,
       experimentalDataView,
-      isWorkflowsEnabled,
       onClose,
       sourcererDataView,
-      telemetry,
       uiSettings,
     ]
   );
@@ -164,7 +140,7 @@ export const CreateFlyout: React.FC<Props> = React.memo(({ onClose }) => {
         minWidth={MIN_FLYOUT_WIDTH}
         onClose={handleCloseButtonClick}
         onKeyDown={onKeyDown}
-        paddingSize="l"
+        paddingSize="m"
         side="right"
         size="m"
         type="overlay"
